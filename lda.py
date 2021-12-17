@@ -1,7 +1,10 @@
+#!/usr/bin/env python
+# lda.py
+
+
 import sys
 import os
 import re
-import csv
 import ijson
 
 from tqdm import tqdm
@@ -71,48 +74,55 @@ def text_it(handle: bytes, to_clean : bool=True, **kwargs) -> Generator[str,None
         return (clean(line, LEMMATIZER, **kwargs) for line in handle.readlines())
     return (line for line in handle.readlines())
 
-def create_dictionary(corpus : str, dtype : str='text') -> gensim.corpora.Dictionary:
+def create_dictionary(corpus : str, dtype : str) -> gensim.corpora.Dictionary:
     """
     Creates a dictionary to pass to the gensim LDA model.
     """
-    with open(corpus, mode=ITER_MAP[dtype][1]) as data_stream:
-        dct_generator = ITER_MAP[dtype][0](data_stream, to_clean=True, return_list=True)
-        dictionary = gensim.corpora.Dictionary()
-        for review in tqdm(dct_generator):
-            dictionary.add_documents([review])
-        dictionary.save('lda_dictionary.pk')
-        del dct_generator
-        print(f"Finished creating dictionary with {len(dictionary.keys())} words\n")
+    with open(corpus, mode=DTYPE_MAP[dtype][1]) as data_stream:
+        if os.path.exists('lda_dictionary.pk'):
+            print("Using cached dictionary `lda_dictionary.pk`")
+            dictionary = gensim.corpora.Dictionary.load('lda_dictionary.pk')
+        else:
+            dct_generator = DTYPE_MAP[dtype][0](data_stream, to_clean=True, return_list=True)
+            dictionary = gensim.corpora.Dictionary()
+            print("Creating dictionary...")
+            for review in tqdm(dct_generator):
+                dictionary.add_documents([review])
+            dictionary.save('lda_dictionary.pk')
+            del dct_generator
+            print(f"Finished creating dictionary with {len(dictionary.keys())} words\n")
+
         return dictionary
 
-def get_model_output(num_topics : int, 
-                     corpus     : Generator[str,None,None], 
-                     dictionary : gensim.corpora.Dictionary,
-                     dtype      : str='text') -> list:
+def get_ldamodel(num_topics : int, 
+                 corpus     : Generator[str,None,None], 
+                 dictionary : gensim.corpora.Dictionary,
+                 dtype      : str) -> gensim.models.ldamulticore.LdaMulticore:
     """
     Returns the topics and associated words.
     """
-    with open(corpus, mode=ITER_MAP[dtype][1]) as data_stream:
+    with open(corpus, mode=DTYPE_MAP[dtype][1]) as data_stream:
 
-        doc_generator = ITER_MAP[dtype][0](data_stream)
-        doc_term_matrix = iter([dictionary.doc2bow([doc]) for doc in doc_generator])
+        doc_generator = DTYPE_MAP[dtype][0](data_stream)
+    doc_term_matrix = [dictionary.doc2bow([doc]) for doc in doc_generator]
 
-        ldamodel = gensim.models.ldamulticore # Can use gensim.models.ldamodel.LDAModel for safer, but not parallel, model
-        print("Fitting LDA model...\n")
-        model = ldamodel.LdaMulticore(tqdm(doc_term_matrix), num_topics=num_topics, id2word=dictionary, passes=PASSES, workers=NUM_WORKERS)
-    return model.print_topics(num_topics=-1)
+    ldamodel = gensim.models.ldamulticore.LdaMulticore # Can use gensim.models.ldamodel.LDAModel for safer, but not parallel, model
+    print("Fitting LDA model...\n")
+    return ldamodel(doc_term_matrix, num_topics=num_topics, id2word=dictionary, passes=PASSES, workers=NUM_WORKERS)
+    # return model.show_topics(num_topics=-1)
 
 
 PATH_TO_CORPUS = '/home/eli/Code/absalute-zero/wik.txt'
+PATH_TO_TOPICS = '/home/eli/Code/absalute-zero/topics.txt'
 STOP = set(stopwords.words('english'))
 PUNC = set(string.punctuation)
 LEMMATIZER = WordNetLemmatizer()
 PASSES = 20
-NUM_WORKERS=3 # set to (number of cpu cores available) -1
-ITER_MAP = {
-        'text' : (text_it, 'r'),
+NUM_WORKERS = 3 # set to (number of cpu cores available) -1
+DTYPE_MAP = {
+        'txt'  : (text_it, 'r'),
         'json' : (json_to_text_it, 'rb'),
-        'csv'  : None,
+        'csv'  : (None, 'r')
 }
 
 if __name__ == "__main__":
@@ -121,5 +131,5 @@ if __name__ == "__main__":
     else:
         num_topics = sys.argv[1]
     d = create_dictionary(PATH_TO_CORPUS)
-    print(get_model_output(num_topics, PATH_TO_CORPUS, d))
+    print(get_ldamodel(num_topics, PATH_TO_CORPUS, d).show_topics(num_topics=-1, num_words=8, log=False, formatted=False))
 
