@@ -108,8 +108,9 @@ def get_ldamodel(num_topics : int,
 
     ldamodel = gensim.models.ldamulticore.LdaMulticore # Can use gensim.models.ldamodel.LDAModel for safer, but not parallel, model
     print("Fitting LDA model...\n")
-    return ldamodel(doc_term_matrix, num_topics=num_topics, id2word=dictionary, passes=PASSES, workers=NUM_WORKERS)
+    return ldamodel(doc_term_matrix, num_topics=num_topics, id2word=dictionary, eta=0.9, alpha=0.01, passes=PASSES, workers=NUM_WORKERS)
     # return model.show_topics(num_topics=-1)
+    # BEST SO FAR: eta=0.9, alpha=0.01
 
 
 PATH_TO_CORPUS = '/home/eli/Code/absalute-zero/wik.txt'
